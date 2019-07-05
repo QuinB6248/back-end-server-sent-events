@@ -56,7 +56,7 @@ app.post('/message', onMessage)
 
 
 //start server
-const port = 5000
+const port = process.env.PORT || 5000
 function onListen () {
   console.log(`Listening on port ${port}`)
 }
