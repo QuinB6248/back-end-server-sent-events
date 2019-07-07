@@ -1,6 +1,7 @@
 const express = require('express')
 const Sse = require('json-sse')
 const bodyParser = require('body-parser')
+const Messages = require('./messages/model')
 const cors = require('cors')
 //initialize the server
 const app = express()
@@ -11,53 +12,51 @@ app.use(cors())
 const jsonParser = bodyParser.json()
 app.use(jsonParser)
 
+Messages
+  .findAll()
+  .then(messages => {
+    //serialize the data
+    const json = JSON.stringify(messages)
+    //initialize the event source
+    const stream = new Sse(json) // when clients connect they see messages
 
+    //listen for new clients
+    function onStream (req,res){
+      stream.init(req, res) //registers client for the stream
+    }
+    app.get('/stream', onStream)
 
-//Our data store - basically the database for now
-const messages = [
-  'hello',
-  'can you see this'
-]
+    function onMessage (req, res, next) {
+      console.log('req.body test:', req.body)
+      Messages
+        .create(req.body)
+        .then(message => {
+          if (!message) {
+            return res.status(404).send({
+              message: `message does not exist`
+            })
+          }
 
-//serialize the data
-const json =JSON.stringify(messages)
-//initialize the event source
-const stream = new Sse(json) // when clients connect they see messages
+          Messages
+            .findAll()
+            .then(messages => {
 
+              const json = JSON.stringify(messages)
+              stream.updateInit(json)
+              stream.send(json)
 
+              return res.send(message)
+            })
+        })
+        .catch(error => next(error))
+    }
 
-//listen for new clients
-function onStream (req,res){
-  stream.init(req, res) //registers client for the stream
-}
-app.get('/stream', onStream)
+    app.post('/message', onMessage)
 
-//Listens for new messages
-function onMessage (req, res) {
-  const { message } = req.body
-  //add message to data store
-  messages.push(message)
-  //reserialize(make string) the store
-  const json = JSON.stringify(messages)
-  //update initial data
-  stream.updateInit(json)
-  //Notify all clients
-  stream.send(json)
-  //send a response
-  return res.status(201).end(message)
-}
-app.post('/message', onMessage)
-
-
-
-
-
-
-
-
-//start server
-const port = process.env.PORT || 5000
-function onListen () {
-  console.log(`Listening on port ${port}`)
-}
-app.listen(port, onListen)
+    //start server
+    const port = process.env.PORT || 5000
+    function onListen () {
+      console.log(`Listening on port ${port}`)
+    }
+    app.listen(port, onListen)
+  })
